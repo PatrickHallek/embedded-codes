@@ -4,16 +4,19 @@
 #include <FS.h>
 #include <ArduinoJson.h>
 
+
+
 String ssid = "placeholder";
 String password = "placeholder";
 String token = "placeholder";
-int server_timeout = 60000;
+int connection_status = 2; // 2 - default, 0 - connection failed, 1 - connected
+int server_timeout = 120000;
 int soil = 0;
 
 const char* host = "192.168.188.22";
 const int httpPort = 3000;
 
-IPAddress apIP(192, 168, 188, 81);
+IPAddress apIP(192, 168, 169, 69);
 ESP8266WebServer server(80);
 RCSwitch rcSwitch = RCSwitch();
 
@@ -21,11 +24,28 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Start...");
   rcSwitch.enableReceive(D1);
-  Serial.println("Start WifiConfiguration");
-  wifiService();
-  WiFi.mode(WIFI_OFF);
-  WiFi.begin(WiFi.SSID(), WiFi.psk());
+ // WiFi.begin(WiFi.SSID(), WiFi.psk());
+  int timer = millis();
+  Serial.println("Check WifiCredentials");
+ // while (WiFi.status() != WL_CONNECTED) {
+ //   Serial.print(".");
+ //   if ((millis() - timer) > 15000) {
+ //     break;
+ //   }
+ //   delay(1000);
+ // }
+  // if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Start WifiConfiguration");
+    wifiService();
+    WiFi.mode(WIFI_OFF);
+    WiFi.begin(WiFi.SSID(), WiFi.psk());
+   //};
   loadConfig();
+  if (token == "placeholder") {
+    Serial.println("Couldn't load conifg data");
+    Serial.println("resetting");
+    ESP.reset();
+  }
 }
 
 void loop() {
@@ -38,60 +58,70 @@ void loop() {
 }
 
 void wifiService() {
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP("WaterMonitor", "admin1234");
   server.on("/text", handleRequest);
+  server.on("/status", statusRequest);
   server.begin();
   Serial.println("HTTP server started");
   int time_saver = millis();
   while (millis() - time_saver < server_timeout) {
-    // dnsServer.processNextRequest();
     server.handleClient();
     delay(0);
-  }
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.begin(ssid, password);
-    int timer = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-      Serial.print(".");
-      if ((millis() - timer) > 15000) {
-        break;
-      }
-      delay(1000);
-    }
   }
   Serial.println("\n After waiting ...");
 }
 
+void statusRequest() {
+  Serial.print("Request status: \n");
+  Serial.println(connection_status);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  server.send(200, "application/json", "{\"message\": \"" + (String)connection_status + "\"}");
+  if (connection_status == 1) {
+    delay(10000);
+    server_timeout = 0;
+  }
+}
+
 void handleRequest() {
+  Serial.print("Start sending");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  server.send(200, "application/json", "{\"message\": \"Credentials received\"}");
   String message = "";
   for (uint8_t i = 0; i < server.args(); i++) {
     message += server.argName(i) + ": " + server.arg(i) + "\n";
   }
-  Serial.print(message);
   token = server.arg(0);
   ssid = server.arg(1);
   password = server.arg(2);
   int timer = millis();
-  Serial.print("Start Connecting");
+  Serial.print("Start Connecting \n");
+  Serial.print(ssid);
+  Serial.print("\n");
+  Serial.print(password);
+  Serial.print("\n");
   WiFi.begin(ssid, password);
+  delay(1000);
+
+  Serial.println(WiFi.status());
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
-    if ((millis() - timer) > 15000) {
+    if ((millis() - timer) > 20000) {
       break;
     }
     delay(1000);
   }
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  Serial.println(WiFi.status());
   if (WiFi.status() == WL_CONNECTED) {
-    server.send(200, "application/json", "{\"message\": \"Success\"}");
-    Serial.print("\n Successfully connected! \n");
+    connection_status = 1;
+    Serial.println("\n Successfully connected! \n");
     saveConfig();
-    server_timeout = 0;
   } else {
-    server.send(500, "application/json", "{\"message\": \"Failed\"}");
-    Serial.print("Something went wrong.");
+    Serial.println("Wrong password");
+    connection_status = 0;
   }
 }
 
