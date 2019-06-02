@@ -1,4 +1,4 @@
-# arduino_codes
+# Embedded Codes
 
 This is just a collection of all my embedded codes.
 The most codes are for the ESP8266 Wifi module and for the Arduino UNO.
